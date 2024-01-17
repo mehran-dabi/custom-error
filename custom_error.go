@@ -1,10 +1,8 @@
 package customerror
 
 import (
-	"fmt"
 	"github.com/pkg/errors"
 	"runtime"
-	"strings"
 )
 
 // CustomError is a struct that contains error information
@@ -14,7 +12,7 @@ type CustomError struct {
 	// code field is the error code. It can be used to identify the error type in the client-side.
 	code int
 	// stackTrace field is the stack trace of the error.
-	stackTrace []string
+	stackTrace []runtime.Frame
 	// messages are the error messages we want to show to the user. They can be
 	messages map[Lang]string
 }
@@ -40,9 +38,9 @@ var defaultMessages = map[Lang]string{
 
 // New is a constructor for CustomError struct
 func New(err error, config ErrorConfig) *CustomError {
-	var stackTrace []string
+	var stackTrace []runtime.Frame
 	if config.CaptureStackTrace {
-		stackTrace = []string{captureStackTrace(2)}
+		stackTrace = []runtime.Frame{captureStackTrace(2)}
 	}
 	return &CustomError{
 		originalError: err,
@@ -56,7 +54,7 @@ func New(err error, config ErrorConfig) *CustomError {
 func E(err error) error {
 	var customErr *CustomError
 	if ok := errors.As(err, &customErr); ok {
-		customErr.stackTrace = append([]string{captureStackTrace(3)}, customErr.stackTrace...)
+		customErr.stackTrace = append([]runtime.Frame{captureStackTrace(3)}, customErr.stackTrace...)
 		return customErr
 	}
 
@@ -70,16 +68,25 @@ func E(err error) error {
 }
 
 // captureStackTrace is a function that returns the stack trace of the error
-func captureStackTrace(skip int) string {
-	pc := make([]uintptr, 1) // number of frames to capture
-	n := runtime.Callers(skip, pc)
+func captureStackTrace(skip int) runtime.Frame {
+	var frames []runtime.Frame
+	callers := make([]uintptr, 1)
+
+	n := runtime.Callers(skip, callers)
 	if n == 0 {
-		return "No stack trace available"
+		return runtime.Frame{}
 	}
 
-	frame, _ := runtime.CallersFrames(pc).Next()
-	functionNamePath := strings.Split(frame.Function, "/")
-	return fmt.Sprintf("%s:%d %s", frame.File, frame.Line, functionNamePath[len(functionNamePath)-1])
+	callerFrames := runtime.CallersFrames(callers[:n])
+	for {
+		frame, more := callerFrames.Next()
+		frames = append(frames, frame)
+		if !more {
+			break
+		}
+	}
+
+	return frames[0]
 }
 
 // Error is a function that returns the error message. It is used to implement the error interface.
@@ -93,7 +100,7 @@ func (r CustomError) GetCode() int {
 }
 
 // GetStackTrace is a function that returns the stack trace of the error.
-func (r CustomError) GetStackTrace() []string {
+func (r CustomError) GetStackTrace() []runtime.Frame {
 	return r.stackTrace
 }
 
